@@ -61,7 +61,7 @@ def features(imgPath1, imgPath2, wlen):
     flann = cv2.FlannBasedMatcher(index_params, search_params)
     knn_matches = flann.knnMatch(des1, des2, k=2)
 
-    ratio_thresh = 1
+    ratio_thresh = 0.4
     good_matches = []
     for i in range(min(len(des1), len(des2))):
         m,n = knn_matches[i]
@@ -74,18 +74,16 @@ def features(imgPath1, imgPath2, wlen):
             cv2.circle(imgShow1, (output[0], output[1]), 5, (r,g,b), 2)
             cv2.circle(imgShow2, (output[2], output[3]), 5, (r,g,b), 2)
             good_matches.append(output)
+    cv2.imwrite("tes1.png", imgShow1)
+    cv2.imwrite("tes2.png", imgShow2)
     return good_matches
 
 def flowMap(fts, w, h, squareLen, flMap):
     data = []
-    minMag = 1000000000000000000
-    maxMag = -10000000000000000000
     for ft in fts:
-        mag = np.sqrt((ft[0]-ft[1])**2+(ft[2]-ft[3])**2)
-        minMag = min(minMag, mag)
-        maxMag = max(maxMag, mag)
+        mag = np.abs(ft[0]-ft[2])+np.abs(ft[1]-ft[3])
         data.append((ft[0], ft[1], mag))
-    img = [[[0,0,0] for i in range(w)] for j in range(h)]
+    img = np.array([np.array([0 for i in range(w)]) for j in range(h)])
     for datum in data:
         for i in range(squareLen):
             if len(img) <= datum[1] + i:
@@ -93,14 +91,17 @@ def flowMap(fts, w, h, squareLen, flMap):
             for j in range(squareLen):
                 if len(img[i]) <= datum[0] + j:
                     break
-                img[datum[1]+i][datum[0]+j] = [int(255*((datum[2]-minMag)/(maxMag-minMag)))]*3
-    cv2.imwrite(flMap, np.array(img))
+                img[datum[1]+i][datum[0]+j] = datum[2]
+    np.save(flMap, img)
+    # np.set_printoptions(threshold=np.inf)
+    # np.set_printoptions(suppress=True)
+    # print(np.load(flMap))
 
 
 def lucus(img1, img2, flMap):
     ft = features(img1, img2, 15)
     img = cv2.imread(img1)
-    flowMap(ft, len(img[0]), len(img), 5, flMap)
+    flowMap(ft, len(img[0]), len(img), 2, flMap)
 
 def createClowMaps(startInd, endInd):
     writeIter = 0
@@ -112,8 +113,40 @@ def createClowMaps(startInd, endInd):
         print(path1)
         print(path2)
         print("______________")
-        lucus(path1, path2, "FlowMap/flowMapV" + str(writeIter) + ".png")
+        lucus(path1, path2, "FlowMap/flowMapV" + str(writeIter) + ".npy")
         writeIter += 1
 
+def compare(disp, groundTruth, k):
+    d = np.load(disp)
+    gt = np.load(groundTruth)
+    num = 0
+    den = 0
+    for x in range(len(d)):
+        for y in range(len(d[x])):
+            pxd = d[x][y]
+            pxgt = gt[x][y]
+            if not pxd == 0 and not pxgt <= 0:
+                # print(str(pxd) + " " + str(pxgt))
+                if (pxd - pxgt)**2 > k**2:
+                    num += 1
+                den += 1
+    return num, den
+
+def compareAll(start, end, k):
+    num = 0
+    den = 0
+    for i in range(start, end+1):
+        number = str(i)
+        file1 = str("0"*(6-len(number))) + number
+        gt = "GroundTruth/" + file1 + ".npy"
+        disp = "FlowMap/flowMapV" + number + ".npy"
+        tempNum, tempDen = compare(disp, gt, k)
+        num += tempNum
+        den += tempDen
+        print(str(i) + "  " + str(num/den))
+    print(num/den)
+    return num/den
+
+
 if __name__ == '__main__':
-    createClowMaps(0, 7480)
+    compareAll(0, 7480, 1)
